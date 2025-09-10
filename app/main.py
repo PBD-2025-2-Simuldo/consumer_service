@@ -1,34 +1,26 @@
-from fastapi import FastAPI, Header, HTTPException, Request
+from fastapi import FastAPI, Depends, HTTPException
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import requests
 import os
 
 app = FastAPI(title="Consumer Service")
+security = HTTPBearer()   # adiciona o esquema de auth no OpenAPI (gera o botão Authorize)
 
-# URL do microserviço de autenticação
 AUTH_MS_URL = os.getenv("AUTH_MS_URL", "http://127.0.0.1:8001")
 
-@app.get("/api/v1/home/")
-def home(authorization: str | None = Header(None)):
-    # Espera header Authorization: Bearer <token>
-    if not authorization:
-        raise HTTPException(status_code=400, detail="Authorization header missing")
-    # extrai token
-    parts = authorization.split()
-    if len(parts) != 2 or parts[0].lower() != "bearer":
-        raise HTTPException(status_code=400, detail="Invalid Authorization header format")
-
-    token = parts[1]
-
-    # chama o MS para validar o token
-    try:
-        r = requests.post(f"{AUTH_MS_URL}/api/v1/authentication/", json={"token": token}, timeout=5)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Erro ao conectar no Auth MS: {str(e)}")
-
+def validate_with_auth_ms(token: str):
+    r = requests.post(f"{AUTH_MS_URL}/api/v1/authentication/", json={"token": token}, timeout=5)
     if r.status_code != 200:
-        # retorna 400 com mensagem de erro
-        detail = r.json().get("detail") if r.headers.get("content-type","").startswith("application/json") else r.text
+        # tenta extrair mensagem de erro retornada pelo MS
+        try:
+            detail = r.json().get("detail")
+        except Exception:
+            detail = r.text
         raise HTTPException(status_code=400, detail=f"Token inválido: {detail}")
+    return r.json()
 
-    data = r.json()
+@app.get("/api/v1/home/")
+def home(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    token = credentials.credentials  # já sem o prefixo "Bearer " (o HTTPBearer extrai)
+    data = validate_with_auth_ms(token)
     return {"message": "Acesso autorizado", "user": {"username": data.get("username"), "nome": data.get("nome")}}
