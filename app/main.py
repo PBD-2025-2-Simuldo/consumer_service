@@ -4,8 +4,14 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import requests
 import os
 
+from app.routers.academico import router
+from app.database import Base, engine
+
 app = FastAPI(title="Consumer Service")
-security = HTTPBearer()
+
+Base.metadata.create_all(bind=engine)
+
+app.include_router(router)
 
 app.add_middleware(
     CORSMiddleware,
@@ -14,6 +20,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+security = HTTPBearer()
 
 AUTH_MS_URL = os.getenv("AUTH_MS_URL", "http://127.0.0.1:8001")
 
@@ -29,6 +37,6 @@ def validate_with_auth_ms(token: str):
 
 @app.get("/api/v1/home/")
 def home(credentials: HTTPAuthorizationCredentials = Depends(security)):
-    token = credentials.credentials
+    token = credentials.credentials  # já sem o prefixo "Bearer "
     data = validate_with_auth_ms(token)
     return {"message": "Acesso autorizado", "user": {"username": data.get("username"), "nome": data.get("nome")}}
